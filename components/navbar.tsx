@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { Truck, Menu, X, Home } from "lucide-react"
+import { Truck, Menu, X, Home, Shield, DollarSign } from "lucide-react"
 
 export function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -32,6 +32,13 @@ export function Navbar() {
             >
               <Truck className="h-4 w-4 mr-2" />
               Seguimiento
+            </Link>
+            <Link
+              href="/precios"
+              className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium flex items-center"
+            >
+              <DollarSign className="h-4 w-4 mr-2" />
+              Precios
             </Link>
           </div>
 
@@ -69,6 +76,16 @@ export function Navbar() {
               <div className="flex items-center">
                 <Truck className="h-5 w-5 mr-2" />
                 Seguimiento
+              </div>
+            </Link>
+            <Link
+              href="/precios"
+              className="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              <div className="flex items-center">
+                <DollarSign className="h-5 w-5 mr-2" />
+                Precios
               </div>
             </Link>
           </div>

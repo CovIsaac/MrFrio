@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { createPortal } from "react-dom"
-import { X, Loader2, Package, Check, AlertCircle } from "lucide-react"
+import { X, Loader2, Package, Check, AlertCircle, DollarSign } from "lucide-react"
 import { useToast } from "./toast-notification"
 
 // Tipos de productos disponibles
@@ -13,6 +13,11 @@ const PRODUCTOS = [
   { id: "mediaBarra", nombre: "MEDIA BARRA" },
   { id: "premium", nombre: "PREMIUM" },
 ]
+
+type PrecioInfo = {
+  base: number
+  personalizado: number | null
+}
 
 type EntregaProductosModalProps = {
   isOpen: boolean
@@ -32,6 +37,8 @@ export function EntregaProductosModal({ isOpen, onClose, cliente, rutaId, onConf
   const [inventarioDisponible, setInventarioDisponible] = useState<Record<string, number>>({})
   const [inventarioRestante, setInventarioRestante] = useState<Record<string, number>>({})
   const [isLoadingInventario, setIsLoadingInventario] = useState(false)
+  const [precios, setPrecios] = useState<Record<string, PrecioInfo>>({})
+  const [isLoadingPrecios, setIsLoadingPrecios] = useState(false)
   const { showToast } = useToast()
 
   // Asegurarse de que el componente está montado antes de usar createPortal
@@ -55,8 +62,11 @@ export function EntregaProductosModal({ isOpen, onClose, cliente, rutaId, onConf
 
       // Cargar inventario disponible
       cargarInventarioDisponible()
+
+      // Cargar precios
+      cargarPrecios()
     }
-  }, [isOpen, rutaId])
+  }, [isOpen, rutaId, cliente.id])
 
   // Cargar el inventario disponible para la ruta
   const cargarInventarioDisponible = async () => {
@@ -79,6 +89,98 @@ export function EntregaProductosModal({ isOpen, onClose, cliente, rutaId, onConf
     } finally {
       setIsLoadingInventario(false)
     }
+  }
+
+  // Cargar precios base y precios del cliente
+  const cargarPrecios = async () => {
+    setIsLoadingPrecios(true)
+    try {
+      // Cargar precios base
+      const responsePreciosBase = await fetch("/api/precios/base")
+      if (!responsePreciosBase.ok) {
+        throw new Error("Error al cargar precios base")
+      }
+
+      const preciosBaseData = await responsePreciosBase.json()
+
+      // Inicializar el objeto de precios con los precios base
+      const nuevosPrecios: Record<string, PrecioInfo> = {}
+
+      preciosBaseData.forEach((producto: any) => {
+        nuevosPrecios[producto.id] = {
+          base: Number.parseFloat(producto.precio_base) || 0,
+          personalizado: null,
+        }
+      })
+
+      // Si hay un cliente seleccionado, cargar sus precios personalizados
+      if (cliente.id) {
+        const responsePreciosCliente = await fetch(`/api/precios/cliente?clienteId=${cliente.id}`)
+        if (responsePreciosCliente.ok) {
+          const data = await responsePreciosCliente.json()
+
+          // Actualizar los precios personalizados donde existan
+          Object.entries(data.precios).forEach(([productoId, precioInfo]: [string, any]) => {
+            if (nuevosPrecios[productoId]) {
+              nuevosPrecios[productoId].personalizado = precioInfo.personalizado
+            } else {
+              nuevosPrecios[productoId] = {
+                base: precioInfo.base || 0,
+                personalizado: precioInfo.personalizado,
+              }
+            }
+          })
+        } else if (responsePreciosCliente.status !== 404) {
+          // Solo mostrar error si no es 404 (cliente sin precios personalizados)
+          console.error("Error al cargar precios del cliente:", await responsePreciosCliente.text())
+        }
+      }
+
+      setPrecios(nuevosPrecios)
+      console.log("Precios cargados:", nuevosPrecios)
+    } catch (error) {
+      console.error("Error al cargar precios:", error)
+      showToast("Error al cargar los precios", "error")
+    } finally {
+      setIsLoadingPrecios(false)
+    }
+  }
+
+  // Obtener el precio a usar para un producto (personalizado o base)
+  const getPrecioProducto = (productoId: string): { precio: number; esPersonalizado: boolean } => {
+    const precioInfo = precios[productoId]
+
+    if (!precioInfo) {
+      return { precio: 0, esPersonalizado: false }
+    }
+
+    // Si hay un precio personalizado, usarlo
+    if (precioInfo.personalizado !== null) {
+      return {
+        precio: precioInfo.personalizado,
+        esPersonalizado: true,
+      }
+    }
+
+    // Si no hay precio personalizado, usar el precio base
+    return {
+      precio: precioInfo.base,
+      esPersonalizado: false,
+    }
+  }
+
+  // Calcular el subtotal para un producto
+  const calcularSubtotal = (productoId: string): number => {
+    const cantidad = cantidades[productoId] === "" ? 0 : Number(cantidades[productoId])
+    const { precio } = getPrecioProducto(productoId)
+    return cantidad * precio
+  }
+
+  // Calcular el total general
+  const calcularTotal = (): number => {
+    return PRODUCTOS.reduce((total, producto) => {
+      return total + calcularSubtotal(producto.id)
+    }, 0)
   }
 
   // Manejar cambio en la cantidad de un producto
@@ -186,6 +288,11 @@ export function EntregaProductosModal({ isOpen, onClose, cliente, rutaId, onConf
     }
   }, [isOpen])
 
+  // Formatear precio como moneda
+  const formatCurrency = (amount: number): string => {
+    return `$${amount.toFixed(2)} MXN`
+  }
+
   // El modal que se renderizará en el portal
   const modalContent =
     isOpen && mounted
@@ -220,10 +327,10 @@ export function EntregaProductosModal({ isOpen, onClose, cliente, rutaId, onConf
                   Cliente: <span className="text-white">{cliente.local}</span>
                 </p>
 
-                {isLoadingInventario ? (
+                {isLoadingInventario || isLoadingPrecios ? (
                   <div className="flex justify-center items-center py-6">
                     <Loader2 className="h-6 w-6 animate-spin text-blue-400 mr-2" />
-                    <span>Cargando inventario disponible...</span>
+                    <span>Cargando datos...</span>
                   </div>
                 ) : (
                   <>
@@ -238,28 +345,59 @@ export function EntregaProductosModal({ isOpen, onClose, cliente, rutaId, onConf
                     </div>
 
                     <div className="space-y-4 mb-6">
-                      {PRODUCTOS.map((producto) => (
-                        <div key={producto.id} className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Package className="h-5 w-5 text-blue-400" />
-                            <span>{producto.nombre}</span>
+                      {PRODUCTOS.map((producto) => {
+                        const { precio, esPersonalizado } = getPrecioProducto(producto.id)
+                        const subtotal = calcularSubtotal(producto.id)
+
+                        return (
+                          <div key={producto.id} className="p-3 border border-gray-800 rounded-lg bg-gray-900/50">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <Package className="h-5 w-5 text-blue-400" />
+                                <span className="font-medium">{producto.nombre}</span>
+                              </div>
+                              <div className="text-sm">
+                                <span className={`${esPersonalizado ? "text-green-400" : "text-gray-400"}`}>
+                                  {formatCurrency(precio)}
+                                  {esPersonalizado && " (Personalizado)"}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-400">
+                                  Disponible: {inventarioRestante[producto.id] || 0}
+                                </span>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  value={cantidades[producto.id] || ""}
+                                  onChange={(e) => handleCantidadChange(producto.id, e.target.value)}
+                                  placeholder="0"
+                                  className="w-16 py-1 px-2 text-center rounded border text-white bg-gray-800 border-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
+                              </div>
+
+                              {subtotal > 0 && (
+                                <div className="flex items-center gap-1 text-sm font-medium text-green-400">
+                                  <DollarSign className="h-4 w-4" />
+                                  {formatCurrency(subtotal)}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-400">
-                              Disponible: {inventarioRestante[producto.id] || 0}
-                            </span>
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              value={cantidades[producto.id] || ""}
-                              onChange={(e) => handleCantidadChange(producto.id, e.target.value)}
-                              placeholder="0"
-                              className="w-16 py-1 px-2 text-center rounded border text-white bg-gray-800 border-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            />
-                          </div>
-                        </div>
-                      ))}
+                        )
+                      })}
+                    </div>
+
+                    {/* Total */}
+                    <div className="bg-gray-800 p-3 rounded-lg mb-6">
+                      <div className="flex justify-between items-center">
+                        <span className="font-medium">Total:</span>
+                        <span className="text-xl font-bold text-green-400">{formatCurrency(calcularTotal())}</span>
+                      </div>
                     </div>
 
                     <div className="flex gap-3">
