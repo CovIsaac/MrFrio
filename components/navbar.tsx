@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { Truck, Menu, X, Home, Shield, DollarSign } from "lucide-react"
+import { Truck, Menu, X, Home, Shield, DollarSign, CreditCard } from "lucide-react"
 
 export function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -34,11 +34,25 @@ export function Navbar() {
               Seguimiento
             </Link>
             <Link
+              href="/admin"
+              className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium flex items-center"
+            >
+              <Shield className="h-4 w-4 mr-2" />
+              Admin
+            </Link>
+            <Link
               href="/precios"
               className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium flex items-center"
             >
               <DollarSign className="h-4 w-4 mr-2" />
               Precios
+            </Link>
+            <Link
+              href="/admin/credito"
+              className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium flex items-center"
+            >
+              <CreditCard className="h-4 w-4 mr-2" />
+              Crédito
             </Link>
           </div>
 
@@ -79,6 +93,16 @@ export function Navbar() {
               </div>
             </Link>
             <Link
+              href="/admin"
+              className="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              <div className="flex items-center">
+                <Shield className="h-5 w-5 mr-2" />
+                Admin
+              </div>
+            </Link>
+            <Link
               href="/precios"
               className="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium"
               onClick={() => setIsMenuOpen(false)}
@@ -86,6 +110,16 @@ export function Navbar() {
               <div className="flex items-center">
                 <DollarSign className="h-5 w-5 mr-2" />
                 Precios
+              </div>
+            </Link>
+            <Link
+              href="/admin/credito"
+              className="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              <div className="flex items-center">
+                <CreditCard className="h-5 w-5 mr-2" />
+                Crédito
               </div>
             </Link>
           </div>
