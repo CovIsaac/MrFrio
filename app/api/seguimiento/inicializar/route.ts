@@ -98,7 +98,26 @@ export async function POST(request: Request) {
           `,
           [clientesPendientes[0].cliente_id, rutaId],
         )
+
+        // También actualizar el estado en la tabla de pedidos
+        await query(
+          `
+          UPDATE pedidos p
+          JOIN asignaciones a ON p.asignacion_id = a.id
+          SET p.estado_seguimiento = 'activo'
+          WHERE p.cliente_id = ?
+            AND a.ruta_id = ? 
+            AND DATE(a.fecha) = CURDATE()
+          `,
+          [clientesPendientes[0].cliente_id, rutaId],
+        )
+
+        console.log(`Cliente ${clientesPendientes[0].cliente_id} establecido como activo`)
+      } else {
+        console.log("No se encontraron clientes pendientes para establecer como activo")
       }
+    } else {
+      console.log(`Ya existe un cliente activo: ${clientesActivos[0].cliente_id}`)
     }
 
     return NextResponse.json({

@@ -81,18 +81,32 @@ export function SeguimientoContent() {
     async function fetchClientes() {
       setIsLoadingClientes(true)
       try {
+        // Paso 1: Cargar los clientes de la ruta
         const response = await fetch(`/api/clientes/ruta/${selectedRuta}`)
         if (response.ok) {
           const data = await response.json()
           setClientes(data)
 
-          // Cargar el estado de los pedidos
+          // Paso 2: Inicializar el seguimiento para esta ruta
+          const initResponse = await fetch("/api/seguimiento/inicializar", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ rutaId: selectedRuta }),
+          })
+
+          if (!initResponse.ok) {
+            console.error(`Error al inicializar seguimiento para la ruta ${selectedRuta}`)
+          }
+
+          // Paso 3: Cargar el estado de los pedidos
           await cargarEstadoPedidos(selectedRuta)
 
-          // Cargar el estado de seguimiento
+          // Paso 4: Cargar el estado de seguimiento
           await cargarEstadoSeguimiento(selectedRuta)
 
-          // Cargar el cliente activo (esto ahora establecerá el primero como activo si no hay ninguno)
+          // Paso 5: Cargar el cliente activo
           await cargarClienteActivo(selectedRuta)
         } else {
           console.error(`Error al cargar clientes para la ruta ${selectedRuta}`)
@@ -143,28 +157,45 @@ export function SeguimientoContent() {
   // Cargar el cliente activo
   const cargarClienteActivo = async (rutaId: string) => {
     try {
-      const response = await fetch(`/api/pedidos/cliente-activo?rutaId=${rutaId}`)
+      // Primero, inicializar el seguimiento para asegurarnos de que todos los clientes estén registrados
+      const initResponse = await fetch("/api/seguimiento/inicializar", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ rutaId }),
+      })
+
+      if (!initResponse.ok) {
+        console.error(`Error al inicializar seguimiento para la ruta ${rutaId}`)
+      }
+
+      // Ahora, obtener el cliente activo
+      const response = await fetch(`/api/seguimiento/cliente-activo?rutaId=${rutaId}`)
       if (response.ok) {
         const data = await response.json()
 
         // Si ya hay un cliente activo, usarlo
         if (data.clienteActivo) {
           setClienteActivo(data.clienteActivo)
+          return
         }
-        // Si no hay cliente activo, establecer el primero como activo
-        else if (clientes.length > 0) {
-          // Buscar el primer cliente que no esté completado o cancelado
-          const primerClientePendiente = clientes.find((cliente) => {
-            const estado = estadoSeguimiento[cliente.id] || "pendiente"
-            return estado !== "completado" && estado !== "cancelado"
-          })
+      }
 
-          if (primerClientePendiente) {
-            establecerClienteActivo(primerClientePendiente.id, rutaId)
-          }
+      // Si llegamos aquí, no hay cliente activo o hubo un error
+      // Intentar establecer el primer cliente pendiente como activo
+      if (clientes.length > 0) {
+        // Buscar el primer cliente que no esté completado o cancelado
+        const primerClientePendiente = clientes.find((cliente) => {
+          const estado = estadoSeguimiento[cliente.id] || "pendiente"
+          return estado !== "completado" && estado !== "cancelado"
+        })
+
+        if (primerClientePendiente) {
+          await establecerClienteActivo(primerClientePendiente.id, rutaId)
+        } else {
+          console.log("No se encontraron clientes pendientes para establecer como activo")
         }
-      } else {
-        console.error(`Error al cargar cliente activo para la ruta ${rutaId}`)
       }
     } catch (error) {
       console.error(`Error al cargar cliente activo:`, error)
@@ -257,7 +288,7 @@ export function SeguimientoContent() {
   }
 
   // Confirmar entrega de productos
-  const confirmarEntrega = async (cantidades: Record<string, number>) => {
+  const confirmarEntrega = async (cantidades: Record<string, number>, creditoUsado?: number) => {
     if (!clienteSeleccionado || !selectedRuta) return
 
     setActualizandoEstado(true)
@@ -272,6 +303,7 @@ export function SeguimientoContent() {
           rutaId: selectedRuta,
           estado: "completado",
           productos: cantidades,
+          creditoUsado: creditoUsado,
         }),
       })
 
@@ -491,8 +523,8 @@ export function SeguimientoContent() {
                       ${getClaseEstado(cliente.id)}
                     `}
                   >
-                    <div className="flex justify-between items-start">
-                      <div>
+                    <div className="flex items-start">
+                      <div className="flex-grow">
                         <div className="flex items-center gap-2">
                           {getClienteIcon(cliente)}
                           <h3 className="font-medium text-white">
@@ -505,11 +537,6 @@ export function SeguimientoContent() {
                             {cliente.es_extemporaneo && (
                               <span className="ml-2 text-xs bg-purple-600/30 text-purple-200 px-2 py-0.5 rounded-full">
                                 Extemporáneo
-                              </span>
-                            )}
-                            {esActivo && (
-                              <span className="ml-2 text-xs bg-yellow-600/30 text-yellow-200 px-2 py-0.5 rounded-full">
-                                Actual
                               </span>
                             )}
                           </h3>
@@ -549,71 +576,73 @@ export function SeguimientoContent() {
                         )}
                       </div>
 
-                      {/* Menú de opciones (solo visible para el cliente activo) */}
-                      {esActivo && estadoSeg !== "completado" && estadoSeg !== "cancelado" && (
-                        <div className="relative">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleMenuClick(cliente.id)
-                            }}
-                            className="p-1.5 rounded-full hover:bg-gray-800 transition-colors"
-                          >
-                            <MoreVertical className="h-5 w-5 text-gray-400" />
-                          </button>
+                      <div className="flex items-center">
+                        {/* Menú de opciones (solo visible para el cliente activo) */}
+                        {esActivo && estadoSeg !== "completado" && estadoSeg !== "cancelado" && (
+                          <div className="relative mr-2">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleMenuClick(cliente.id)
+                              }}
+                              className="p-1.5 rounded-full hover:bg-gray-800 transition-colors"
+                            >
+                              <MoreVertical className="h-5 w-5 text-gray-400" />
+                            </button>
 
-                          {menuAbierto === cliente.id && (
-                            <div className="absolute right-0 top-full mt-1 w-48 bg-gray-800 rounded-md shadow-lg z-10 border border-gray-700">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleCompletarClick(cliente)
-                                }}
-                                className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-700 flex items-center gap-2 rounded-t-md"
-                              >
-                                <Check className="h-4 w-4 text-green-400" />
-                                Completar Pedido
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleCancelarClick(cliente)
-                                }}
-                                className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-700 flex items-center gap-2 rounded-b-md"
-                              >
-                                <X className="h-4 w-4 text-red-400" />
-                                Cancelar Pedido
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                            {menuAbierto === cliente.id && (
+                              <div className="absolute right-0 top-full mt-1 w-48 bg-gray-800 rounded-md shadow-lg z-10 border border-gray-700">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleCompletarClick(cliente)
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-700 flex items-center gap-2 rounded-t-md"
+                                >
+                                  <Check className="h-4 w-4 text-green-400" />
+                                  Completar Pedido
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleCancelarClick(cliente)
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-700 flex items-center gap-2 rounded-b-md"
+                                >
+                                  <X className="h-4 w-4 text-red-400" />
+                                  Cancelar Pedido
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
 
-                      {/* Indicador de estado */}
-                      {estadoSeg === "pendiente" && (
-                        <div className="bg-gray-700/50 text-gray-400 px-3 py-1 rounded-full text-xs font-medium flex items-center">
-                          <AlertCircle className="h-3 w-3 mr-1" />
-                          Pendiente
-                        </div>
-                      )}
-                      {estadoSeg === "activo" && (
-                        <div className="bg-yellow-900/20 text-yellow-400 px-3 py-1 rounded-full text-xs font-medium flex items-center">
-                          <AlertCircle className="h-3 w-3 mr-1" />
-                          Activo
-                        </div>
-                      )}
-                      {estadoSeg === "completado" && (
-                        <div className="bg-green-900/20 text-green-400 px-3 py-1 rounded-full text-xs font-medium flex items-center">
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          Completado
-                        </div>
-                      )}
-                      {estadoSeg === "cancelado" && (
-                        <div className="bg-red-900/20 text-red-400 px-3 py-1 rounded-full text-xs font-medium flex items-center">
-                          <X className="h-3 w-3 mr-1" />
-                          Cancelado
-                        </div>
-                      )}
+                        {/* Indicador de estado */}
+                        {estadoSeg === "pendiente" && (
+                          <div className="bg-gray-700/50 text-gray-400 px-3 py-1 rounded-full text-xs font-medium flex items-center">
+                            <AlertCircle className="h-3 w-3 mr-1" />
+                            Pendiente
+                          </div>
+                        )}
+                        {estadoSeg === "activo" && (
+                          <div className="bg-yellow-900/20 text-yellow-400 px-3 py-1 rounded-full text-xs font-medium flex items-center">
+                            <AlertCircle className="h-3 w-3 mr-1" />
+                            Activo
+                          </div>
+                        )}
+                        {estadoSeg === "completado" && (
+                          <div className="bg-green-900/20 text-green-400 px-3 py-1 rounded-full text-xs font-medium flex items-center">
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            Completado
+                          </div>
+                        )}
+                        {estadoSeg === "cancelado" && (
+                          <div className="bg-red-900/20 text-red-400 px-3 py-1 rounded-full text-xs font-medium flex items-center">
+                            <X className="h-3 w-3 mr-1" />
+                            Cancelado
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )

@@ -4,7 +4,7 @@ import { query } from "@/lib/db"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { clienteId, rutaId, estado, motivo, productos } = body
+    const { clienteId, rutaId, estado, motivo, productos, creditoUsado } = body
 
     if (!clienteId || !rutaId || !estado) {
       return NextResponse.json({ error: "Faltan datos requeridos" }, { status: 400 })
@@ -114,6 +114,11 @@ export async function POST(request: Request) {
             rutaId,
           ],
         )
+
+        // Si se usó crédito, registrarlo
+        if (creditoUsado && creditoUsado > 0) {
+          await registrarUsoCredito(clienteId, creditoUsado, pedidoId)
+        }
       } else if (estado === "cancelado" && motivo) {
         // Actualizar estado y motivo de cancelación
         await query(
@@ -176,6 +181,11 @@ export async function POST(request: Request) {
             rutaId,
           ],
         )
+
+        // Si se usó crédito, registrarlo
+        if (creditoUsado && creditoUsado > 0) {
+          await registrarUsoCredito(clienteId, creditoUsado, pedidoId)
+        }
       } else if (estado === "cancelado" && motivo) {
         const result = await query(
           `
@@ -197,5 +207,50 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("Error al actualizar estado del pedido:", error)
     return NextResponse.json({ error: "Error al actualizar estado del pedido" }, { status: 500 })
+  }
+}
+
+// Función para registrar el uso de crédito
+async function registrarUsoCredito(clienteId: string, monto: number, pedidoId: string) {
+  try {
+    // Verificar que el cliente tenga suficiente crédito disponible
+    const creditoInfo = await query(
+      `
+      SELECT 
+        limite_credito,
+        (limite_credito - COALESCE(
+          (SELECT SUM(monto) FROM credito_uso WHERE cliente_id = ? AND pagado = 0), 
+          0
+        )) as disponible
+      FROM clientes
+      WHERE id = ?
+      `,
+      [clienteId, clienteId],
+    )
+
+    if (!creditoInfo || creditoInfo.length === 0) {
+      throw new Error("No se encontró información de crédito para el cliente")
+    }
+
+    const disponible = creditoInfo[0].disponible || 0
+
+    if (monto > disponible) {
+      throw new Error("El monto de crédito solicitado excede el disponible")
+    }
+
+    // Registrar el uso de crédito
+    await query(
+      `
+      INSERT INTO credito_uso (
+        cliente_id, monto, fecha, pedido_id, pagado
+      ) VALUES (?, ?, NOW(), ?, 0)
+      `,
+      [clienteId, monto, pedidoId],
+    )
+
+    return true
+  } catch (error) {
+    console.error("Error al registrar uso de crédito:", error)
+    throw error
   }
 }

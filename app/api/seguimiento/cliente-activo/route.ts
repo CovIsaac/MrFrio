@@ -1,3 +1,5 @@
+// Crear un nuevo archivo para manejar el cliente activo en el seguimiento
+
 import { NextResponse } from "next/server"
 import { query } from "@/lib/db"
 
@@ -15,8 +17,7 @@ export async function GET(request: Request) {
     // Obtener el cliente activo para la ruta y fecha actual
     const clientesActivos = await query(
       `
-      SELECT 
-        cliente_id
+      SELECT cliente_id
       FROM seguimiento_clientes
       WHERE ruta_id = ? 
         AND fecha = CURDATE()
@@ -27,6 +28,36 @@ export async function GET(request: Request) {
     )
 
     if (!clientesActivos || clientesActivos.length === 0) {
+      // Si no hay cliente activo, buscar el primer cliente pendiente
+      const clientesPendientes = await query(
+        `
+        SELECT cliente_id
+        FROM seguimiento_clientes
+        WHERE ruta_id = ? 
+          AND fecha = CURDATE()
+          AND estado = 'pendiente'
+        ORDER BY id ASC
+        LIMIT 1
+        `,
+        [rutaId],
+      )
+
+      if (clientesPendientes && clientesPendientes.length > 0) {
+        // Establecer este cliente como activo
+        await query(
+          `
+          UPDATE seguimiento_clientes
+          SET estado = 'activo'
+          WHERE cliente_id = ?
+            AND ruta_id = ?
+            AND fecha = CURDATE()
+          `,
+          [clientesPendientes[0].cliente_id, rutaId],
+        )
+
+        return NextResponse.json({ clienteActivo: clientesPendientes[0].cliente_id })
+      }
+
       return NextResponse.json({ clienteActivo: null })
     }
 
@@ -47,7 +78,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Faltan datos requeridos" }, { status: 400 })
     }
 
-    // Primero, establecer todos los clientes de esta ruta como pendientes
+    // Primero, establecer todos los clientes de esta ruta como pendientes (si estaban activos)
     await query(
       `
       UPDATE seguimiento_clientes
@@ -62,9 +93,24 @@ export async function POST(request: Request) {
     // Luego, establecer el cliente seleccionado como activo
     await query(
       `
-      INSERT INTO seguimiento_clientes (cliente_id, ruta_id, fecha, estado)
-      VALUES (?, ?, CURDATE(), 'activo')
-      ON DUPLICATE KEY UPDATE estado = 'activo'
+      UPDATE seguimiento_clientes
+      SET estado = 'activo'
+      WHERE cliente_id = ?
+        AND ruta_id = ?
+        AND fecha = CURDATE()
+      `,
+      [clienteId, rutaId],
+    )
+
+    // También actualizar el estado en la tabla de pedidos
+    await query(
+      `
+      UPDATE pedidos p
+      JOIN asignaciones a ON p.asignacion_id = a.id
+      SET p.estado_seguimiento = 'activo'
+      WHERE p.cliente_id = ?
+        AND a.ruta_id = ? 
+        AND DATE(a.fecha) = CURDATE()
       `,
       [clienteId, rutaId],
     )
