@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { Truck, Menu, X, Home, Shield, DollarSign, CreditCard } from "lucide-react"
+import { Truck, Menu, X, Home, Shield, DollarSign, CreditCard, FileText, TrendingDown } from "lucide-react"
 
 export function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -53,6 +53,21 @@ export function Navbar() {
             >
               <CreditCard className="h-4 w-4 mr-2" />
               Crédito
+            </Link>
+            <Link
+              href="/salidas-dinero"
+              className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium flex items-center"
+            >
+              <TrendingDown className="h-4 w-4 mr-2" />
+              Salidas
+            </Link>
+            {/* Nuevo enlace a Reportes */}
+            <Link
+              href="/reportes"
+              className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium flex items-center"
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              Reportes
             </Link>
           </div>
 
@@ -120,6 +135,27 @@ export function Navbar() {
               <div className="flex items-center">
                 <CreditCard className="h-5 w-5 mr-2" />
                 Crédito
+              </div>
+            </Link>
+            <Link
+              href="/salidas-dinero"
+              className="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              <div className="flex items-center">
+                <TrendingDown className="h-5 w-5 mr-2" />
+                Salidas
+              </div>
+            </Link>
+            {/* Nuevo enlace a Reportes en menú móvil */}
+            <Link
+              href="/reportes"
+              className="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              <div className="flex items-center">
+                <FileText className="h-5 w-5 mr-2" />
+                Reportes
               </div>
             </Link>
           </div>
