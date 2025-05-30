@@ -5,6 +5,7 @@ import { DbConnectionStatus } from "@/components/db-connection-status"
 import { ExtemporaryOrderModal } from "@/components/extemporary-order-modal"
 import { LimpiarExtemporaneosAutomatico } from "@/components/limpiar-extemporaneos-automatico"
 import { getDiaActualNombre } from "@/lib/utils-client"
+import Image from "next/image"
 
 export default function Home() {
   const diaActual = getDiaActualNombre()
@@ -19,12 +20,12 @@ export default function Home() {
         <div className="absolute inset-0 bg-blue-900/20 mix-blend-overlay pointer-events-none" />
         <div className="container mx-auto px-4 py-6 relative z-10">
           <div className="flex justify-center">
-            <img
+            <Image
               src="/mrfrio-logo.png"
               alt="Mr. Frío de San Luis"
               width={320}
               height={64}
-              priority="true"
+              priority
               className="drop-shadow-lg"
             />
           </div>

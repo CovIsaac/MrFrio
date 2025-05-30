@@ -2,12 +2,13 @@ import { createPool } from "mysql2/promise"
 
 const pool = createPool({
   host: process.env.DB_HOST || "srv440.hstgr.io",
-    user: process.env.DB_USER || "u191251575_mrfrio",
-    password: process.env.DB_PASSWORD || "Mrfrioreact123",
-    database: process.env.DB_NAME || "u191251575_reactfrio",
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
+  user: process.env.DB_USER || "u191251575_mrfrio",
+  password: process.env.DB_PASSWORD || "Mrfrioreact123",
+  database: process.env.DB_NAME || "u191251575_reactfrio",
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+  timezone: "+00:00", // Configurar timezone UTC
 })
 
 // Reemplazar la función query con una versión sin logs de depuración
@@ -553,5 +554,108 @@ export async function limpiarClientesExtemporaneos() {
   } catch (error) {
     console.error("Error al limpiar clientes extemporáneos:", error)
     throw error
+  }
+}
+
+// ===== FUNCIONES PARA SALIDAS DE EFECTIVO =====
+
+// Interfaces para salidas de efectivo
+interface SalidaEfectivoFilters {
+  rutero_id?: number
+  fecha_desde?: string | null
+  fecha_hasta?: string | null
+}
+
+interface CreateSalidaEfectivo {
+  rutero_id: number
+  motivo: string
+  monto: number
+}
+
+// CORREGIDA: Función para obtener salidas de efectivo con manejo correcto de zona horaria
+export async function getSalidasEfectivo(filters: SalidaEfectivoFilters = {}) {
+  try {
+    let sql = `
+      SELECT 
+        se.id,
+        se.rutero_id,
+        r.nombre as rutero_nombre,
+        se.fecha,
+        se.motivo,
+        CAST(se.monto AS DECIMAL(10,2)) as monto,
+        se.fecha_creacion,
+        se.fecha_actualizacion
+      FROM salidas_efectivo se
+      INNER JOIN ruteros r ON se.rutero_id = r.id
+      WHERE 1=1
+    `
+
+    const params: any[] = []
+
+    if (filters.rutero_id) {
+      sql += " AND se.rutero_id = ?"
+      params.push(filters.rutero_id)
+    }
+
+    // CORREGIDO: Usar CONVERT_TZ para manejar zona horaria correctamente
+    // Convertir de UTC a zona horaria local de México (UTC-6)
+    if (filters.fecha_desde) {
+      sql += " AND DATE(CONVERT_TZ(se.fecha_creacion, '+00:00', '-06:00')) >= ?"
+      params.push(filters.fecha_desde)
+    }
+
+    if (filters.fecha_hasta) {
+      sql += " AND DATE(CONVERT_TZ(se.fecha_creacion, '+00:00', '-06:00')) <= ?"
+      params.push(filters.fecha_hasta)
+    }
+
+    sql += " ORDER BY se.fecha_creacion DESC"
+
+    const rows: any = await query(sql, params)
+
+    // Asegurar que los montos sean números
+    return rows.map((row: any) => ({
+      ...row,
+      monto: Number.parseFloat(row.monto) || 0,
+    }))
+  } catch (error) {
+    console.error("Error al obtener salidas de efectivo:", error)
+    throw error
+  }
+}
+
+// CORREGIDA: Función para crear una nueva salida de efectivo con zona horaria local
+export async function createSalidaEfectivo(data: CreateSalidaEfectivo) {
+  const connection = await pool.getConnection()
+
+  try {
+    await connection.beginTransaction()
+
+    // Verificar que el rutero existe y está activo
+    const [ruteroRows]: any = await connection.execute("SELECT id FROM ruteros WHERE id = ? AND activo = 1", [
+      data.rutero_id,
+    ])
+
+    if (!ruteroRows || ruteroRows.length === 0) {
+      throw new Error("Repartidor no encontrado o inactivo")
+    }
+
+    // CORREGIDO: Insertar con zona horaria local de México
+    const [result]: any = await connection.execute(
+      `INSERT INTO salidas_efectivo (rutero_id, fecha, motivo, monto, fecha_creacion, fecha_actualizacion) 
+       VALUES (?, CONVERT_TZ(NOW(), '+00:00', '-06:00'), ?, ?, 
+               CONVERT_TZ(NOW(), '+00:00', '-06:00'), 
+               CONVERT_TZ(NOW(), '+00:00', '-06:00'))`,
+      [data.rutero_id, data.motivo, data.monto],
+    )
+
+    await connection.commit()
+    return result.insertId
+  } catch (error) {
+    await connection.rollback()
+    console.error("Error al crear salida de efectivo:", error)
+    throw error
+  } finally {
+    connection.release()
   }
 }
